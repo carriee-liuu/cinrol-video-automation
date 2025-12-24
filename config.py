@@ -6,6 +6,10 @@ Loads credentials and settings from environment variables and GitHub secrets.
 import os
 import json
 from typing import Optional
+from dotenv import load_dotenv
+
+# Load .env file if it exists (for local testing)
+load_dotenv()
 
 
 class Config:

@@ -42,6 +42,20 @@ from instagram_uploader import InstagramUploader
 from thumbnail_extractor import ThumbnailExtractor
 
 
+def extract_folder_id_from_link(link: str) -> Optional[str]:
+    """
+    Extract folder ID from Google Drive link.
+    Supports formats:
+    - https://drive.google.com/drive/folders/FOLDER_ID
+    - https://drive.google.com/drive/u/2/folders/FOLDER_ID?...
+    """
+    import re
+    match = re.search(r'/folders/([a-zA-Z0-9_-]+)', link)
+    if match:
+        return match.group(1)
+    return None
+
+
 def parse_drive_path(path: str) -> tuple:
     """
     Parse Google Drive path in format: drive://folder_name/file_name
@@ -53,6 +67,46 @@ def parse_drive_path(path: str) -> tuple:
         if len(parts) >= 2:
             return "/".join(parts[:-1]), parts[-1]
     return None, path
+
+
+def download_from_folder_link(drive_handler: GoogleDriveHandler, folder_link: str) -> tuple:
+    """
+    Download video and cover files from a Google Drive folder link.
+    Returns: (video_path, cover_path)
+    """
+    folder_id = extract_folder_id_from_link(folder_link)
+    if not folder_id:
+        print(f"Error: Could not extract folder ID from link: {folder_link}")
+        return None, None
+    
+    print(f"Folder ID: {folder_id}")
+    
+    # Find video file (mp4, mov, avi, mkv)
+    video_file = drive_handler.find_file_in_folder(folder_id)
+    if not video_file:
+        print("Error: No video file found in folder")
+        return None, None
+    
+    # Find cover file (contains "cover" or "Cover" in name)
+    cover_file = drive_handler.find_file_in_folder(folder_id, file_pattern="over")  # matches Cover or cover
+    
+    config = get_config()
+    
+    # Download video
+    video_ext = os.path.splitext(video_file['name'])[1]
+    video_path = os.path.join(config.temp_dir, f"manual_video{video_ext}")
+    
+    if not drive_handler.download_file(video_file['id'], video_path):
+        return None, None
+    
+    # Download cover if found
+    cover_path = None
+    if cover_file:
+        cover_ext = os.path.splitext(cover_file['name'])[1]
+        cover_path = os.path.join(config.temp_dir, f"manual_cover{cover_ext}")
+        drive_handler.download_file(cover_file['id'], cover_path)
+    
+    return video_path, cover_path
 
 
 def download_from_drive(drive_handler: GoogleDriveHandler, drive_path: str, local_filename: str) -> Optional[str]:
@@ -200,7 +254,8 @@ def main():
     )
     
     # Video upload options
-    parser.add_argument("--video", help="Path to video file (local or drive://folder/file.mp4)")
+    parser.add_argument("--video", help="Path to video file (local, drive://, or Google Drive folder link)")
+    parser.add_argument("--folder", help="Google Drive folder link containing video and cover (alternative to --video and --thumbnail)")
     parser.add_argument("--thumbnail", help="Path to thumbnail/cover image (local or drive://)")
     
     # YouTube options
@@ -234,8 +289,8 @@ def main():
         success = update_instagram_bio(args)
         sys.exit(0 if success else 1)
     
-    if not args.video:
-        print("Error: --video is required")
+    if not args.video and not args.folder:
+        print("Error: Either --video or --folder is required")
         parser.print_help()
         sys.exit(1)
     
@@ -250,7 +305,10 @@ def main():
     print("="*80)
     print("MANUAL VIDEO UPLOAD")
     print("="*80)
-    print(f"Video: {args.video}")
+    if args.folder:
+        print(f"Folder: {args.folder}")
+    else:
+        print(f"Video: {args.video}")
     print(f"Platform: {args.platform}")
     print()
     
@@ -258,23 +316,34 @@ def main():
     config = get_config()
     drive_handler = GoogleDriveHandler()
     
-    # Download video
-    print("Downloading video...")
-    video_path = download_from_drive(drive_handler, args.video, "manual_video.mp4")
-    if not video_path:
-        print("Failed to get video file")
-        sys.exit(1)
-    
-    # Download or create thumbnail
+    # Download video and thumbnail
+    video_path = None
     thumbnail_path = None
-    if args.thumbnail:
-        print("Downloading thumbnail...")
-        thumbnail_path = download_from_drive(drive_handler, args.thumbnail, "manual_thumbnail.jpg")
+    
+    if args.folder:
+        # Use folder link - automatically find video and cover
+        print("Downloading from folder link...")
+        video_path, thumbnail_path = download_from_folder_link(drive_handler, args.folder)
+        if not video_path:
+            print("Failed to download from folder")
+            sys.exit(1)
     else:
-        print("No thumbnail provided, extracting from video...")
-        thumbnail_path = ThumbnailExtractor.create_thumbnail(
-            video_path, None, config.temp_dir
-        )
+        # Download video
+        print("Downloading video...")
+        video_path = download_from_drive(drive_handler, args.video, "manual_video.mp4")
+        if not video_path:
+            print("Failed to get video file")
+            sys.exit(1)
+        
+        # Download or create thumbnail
+        if args.thumbnail:
+            print("Downloading thumbnail...")
+            thumbnail_path = download_from_drive(drive_handler, args.thumbnail, "manual_thumbnail.jpg")
+        else:
+            print("No thumbnail provided, extracting from video...")
+            thumbnail_path = ThumbnailExtractor.create_thumbnail(
+                video_path, None, config.temp_dir
+            )
     
     # Upload to platforms
     success = True
