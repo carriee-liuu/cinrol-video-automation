@@ -1,0 +1,25 @@
+# Example Environment Variables for Local Testing
+# Copy these to a .env file and fill in your actual values
+# NEVER commit .env to git!
+
+# Google Sheets ID (from the URL)
+# Example: https://docs.google.com/spreadsheets/d/SHEETS_ID_HERE/edit
+GOOGLE_SHEETS_ID=your_sheets_id_here
+
+# Google Drive root folder ID (folder containing all podcast folders)
+# Example: https://drive.google.com/drive/folders/FOLDER_ID_HERE
+DRIVE_FOLDER_ID=your_drive_folder_id_here
+
+# Google service account credentials (entire JSON as a single line)
+GOOGLE_DRIVE_CREDENTIALS='{"type":"service_account","project_id":"your-project","private_key_id":"...","private_key":"...","client_email":"...","client_id":"...","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token","auth_provider_x509_cert_url":"https://www.googleapis.com/oauth2/v1/certs","client_x509_cert_url":"..."}'
+
+# YouTube OAuth credentials (entire JSON as a single line)
+YOUTUBE_CLIENT_SECRETS='{"installed":{"client_id":"...","project_id":"...","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token","auth_provider_x509_cert_url":"https://www.googleapis.com/oauth2/v1/certs","client_secret":"...","redirect_uris":["http://localhost"]}}'
+
+# Instagram credentials
+INSTAGRAM_USERNAME=your_instagram_username
+INSTAGRAM_PASSWORD=your_instagram_password
+
+# Optional: Timezone (default: America/New_York)
+TIMEZONE=America/New_York
+

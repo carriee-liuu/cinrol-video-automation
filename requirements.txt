@@ -1,0 +1,24 @@
+# Google API dependencies
+google-api-python-client>=2.108.0
+google-auth-httplib2>=0.2.0
+google-auth-oauthlib>=1.2.0
+gspread>=5.12.0
+
+# BigQuery
+google-cloud-bigquery>=3.11.0
+pandas>=2.0.0
+
+# SFTP
+paramiko>=3.3.1
+
+# Instagram
+instagrapi>=2.0.0
+
+# Video processing
+opencv-python>=4.8.1.78
+Pillow>=10.1.0
+
+# Utilities
+python-dotenv>=1.0.0
+requests>=2.31.0
+pytz>=2023.3

@@ -1,0 +1,14 @@
+.env
+temp/
+*.pyc
+__pycache__/
+*.log
+*.mp4
+*.jpg
+*.png
+*.jpeg
+.DS_Store
+credentials.json
+token.pickle
+*.session
+
