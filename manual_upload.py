@@ -165,18 +165,43 @@ def upload_to_youtube(args, video_path: str, thumbnail_path: Optional[str]):
     
     youtube = YouTubeUploader()
     
+    # Parse schedule time if provided
+    publish_at = None
+    if args.schedule:
+        from datetime import datetime
+        import pytz
+        
+        try:
+            # Parse the schedule time (assuming EST)
+            est = pytz.timezone('America/New_York')
+            naive_dt = datetime.strptime(args.schedule, '%Y-%m-%d %H:%M')
+            est_dt = est.localize(naive_dt)
+            
+            # Convert to UTC and format as RFC 3339
+            utc_dt = est_dt.astimezone(pytz.UTC)
+            publish_at = utc_dt.isoformat()
+            
+            print(f"Scheduling for: {args.schedule} EST")
+        except Exception as e:
+            print(f"Error parsing schedule time: {e}")
+            print("Format should be: 'YYYY-MM-DD HH:MM' (e.g., '2024-12-25 11:00')")
+            return False
+    
     video_id = youtube.upload_video(
         video_path=video_path,
         title=args.title,
         description=args.description,
         thumbnail_path=thumbnail_path,
-        privacy_status=args.privacy or "public"
+        privacy_status=args.privacy or "public",
+        publish_at=publish_at
     )
     
     if video_id:
         print(f"✓ YouTube upload successful!")
         print(f"  Video ID: {video_id}")
         print(f"  URL: https://www.youtube.com/watch?v={video_id}")
+        if publish_at:
+            print(f"  Will be published at: {args.schedule} EST")
         return True
     else:
         print("✗ YouTube upload failed")
@@ -263,6 +288,7 @@ def main():
     parser.add_argument("--description", help="YouTube video description")
     parser.add_argument("--privacy", choices=["public", "private", "unlisted"], 
                        help="YouTube privacy setting (default: public)")
+    parser.add_argument("--schedule", help="Schedule publish time (format: 'YYYY-MM-DD HH:MM' in EST, e.g., '2024-12-25 11:00')")
     
     # Instagram options
     parser.add_argument("--caption", help="Instagram caption")

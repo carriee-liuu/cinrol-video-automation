@@ -69,7 +69,8 @@ class YouTubeUploader:
         thumbnail_path: Optional[str] = None,
         tags: Optional[list] = None,
         category_id: str = "22",  # People & Blogs
-        privacy_status: str = "public"  # "public", "private", or "unlisted"
+        privacy_status: str = "public",  # "public", "private", or "unlisted"
+        publish_at: Optional[str] = None  # RFC 3339 datetime for scheduled publishing
     ) -> Optional[str]:
         """
         Upload a video to YouTube.
@@ -104,11 +105,20 @@ class YouTubeUploader:
             }
         }
         
+        # Add scheduled publish time if provided
+        if publish_at:
+            body['status']['publishAt'] = publish_at
+            body['status']['privacyStatus'] = 'private'  # Must be private for scheduled publishing
+            print(f"Scheduled to publish at: {publish_at}")
+        
         # Check if this is a Short (vertical video under 60 seconds)
         # YouTube Shorts are automatically detected if they're vertical and under 60s
         
         print(f"Uploading to YouTube: {title}")
-        print(f"Privacy: {privacy_status}")
+        if publish_at:
+            print(f"Will be published publicly at: {publish_at}")
+        else:
+            print(f"Privacy: {privacy_status}")
         
         try:
             # Create MediaFileUpload object
