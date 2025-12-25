@@ -1,0 +1,96 @@
+name: Publish YouTube Video
+
+on:
+  # Allow manual triggering with video ID and publish time
+  workflow_dispatch:
+    inputs:
+      video_id:
+        description: 'YouTube Video ID'
+        required: true
+        type: string
+      publish_time:
+        description: 'Publish time (YYYY-MM-DD HH:MM in EST)'
+        required: true
+        type: string
+
+jobs:
+  wait-and-publish:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib python-dotenv pytz
+      
+      - name: Decode YouTube token
+        run: |
+          echo "${{ secrets.YOUTUBE_TOKEN_BASE64 }}" | base64 -d > youtube_token.pickle
+      
+      - name: Calculate wait time and publish
+        env:
+          VIDEO_ID: ${{ inputs.video_id }}
+          PUBLISH_TIME: ${{ inputs.publish_time }}
+          YOUTUBE_CLIENT_SECRETS: ${{ secrets.YOUTUBE_CLIENT_SECRETS }}
+        run: |
+          python3 << 'PYTHON_EOF'
+          import os
+          import time
+          import pickle
+          from datetime import datetime
+          import pytz
+          from googleapiclient.discovery import build
+          
+          video_id = os.environ['VIDEO_ID']
+          publish_time_str = os.environ['PUBLISH_TIME']
+          
+          # Parse publish time (EST)
+          est = pytz.timezone('America/New_York')
+          publish_dt = est.localize(datetime.strptime(publish_time_str, '%Y-%m-%d %H:%M'))
+          
+          # Calculate wait time
+          now = datetime.now(est)
+          wait_seconds = (publish_dt - now).total_seconds()
+          
+          if wait_seconds > 0:
+              print(f"Waiting {int(wait_seconds)} seconds until {publish_time_str} EST...")
+              # GitHub Actions has a 6 hour max runtime, check if wait is reasonable
+              if wait_seconds > 21000:  # 5.8 hours
+                  print("ERROR: Publish time is too far in the future (>5.8 hours)")
+                  print("Please schedule closer to publish time")
+                  exit(1)
+              time.sleep(wait_seconds)
+          
+          print(f"Publishing video {video_id}...")
+          
+          # Load credentials
+          with open('youtube_token.pickle', 'rb') as token:
+              credentials = pickle.load(token)
+          
+          # Build YouTube service
+          youtube = build('youtube', 'v3', credentials=credentials)
+          
+          # Update video to public
+          youtube.videos().update(
+              part="status",
+              body={
+                  "id": video_id,
+                  "status": {
+                      "privacyStatus": "public",
+                      "selfDeclaredMadeForKids": False
+                  }
+              }
+          ).execute()
+          
+          print(f"✓ Video {video_id} is now PUBLIC!")
+          print(f"  URL: https://www.youtube.com/watch?v={video_id}")
+          PYTHON_EOF
+

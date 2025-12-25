@@ -38,8 +38,23 @@ from typing import Optional
 from config import get_config
 from google_drive_handler import GoogleDriveHandler
 from youtube_uploader import YouTubeUploader
-from instagram_uploader import InstagramUploader
 from thumbnail_extractor import ThumbnailExtractor
+
+# Instagram is optional (requires Python < 3.14)
+try:
+    from instagram_uploader import InstagramUploader
+    INSTAGRAM_AVAILABLE = True
+except ImportError:
+    INSTAGRAM_AVAILABLE = False
+    print("Warning: Instagram support not available (instagrapi not installed)")
+
+# TikTok uploader
+try:
+    from tiktok_uploader import TikTokUploader
+    TIKTOK_AVAILABLE = True
+except ImportError:
+    TIKTOK_AVAILABLE = False
+    print("Warning: TikTok support not available")
 
 
 def extract_folder_id_from_link(link: str) -> Optional[str]:
@@ -214,6 +229,10 @@ def upload_to_instagram(args, video_path: str, cover_path: Optional[str]):
     print("UPLOADING TO INSTAGRAM")
     print("="*80)
     
+    if not INSTAGRAM_AVAILABLE:
+        print("✗ Instagram support not available (requires instagrapi package)")
+        return False
+    
     instagram = InstagramUploader()
     
     media_id = instagram.upload_reel_with_retry(
@@ -231,11 +250,48 @@ def upload_to_instagram(args, video_path: str, cover_path: Optional[str]):
         return False
 
 
+def upload_to_tiktok(args, video_path: str):
+    """Upload video to TikTok (manual process)."""
+    print("\n" + "="*80)
+    print("UPLOADING TO TIKTOK")
+    print("="*80)
+    
+    if not TIKTOK_AVAILABLE:
+        print("✗ TikTok support not available")
+        return False
+    
+    tiktok = TikTokUploader()
+    
+    # Extract hashtags from caption if provided
+    hashtags = []
+    if args.caption:
+        words = args.caption.split()
+        hashtags = [word[1:] for word in words if word.startswith('#')]
+    
+    result = tiktok.upload_video(
+        video_path=video_path,
+        title=args.title or args.caption or "New Video",
+        description=args.description or args.caption or "",
+        hashtags=hashtags
+    )
+    
+    if result:
+        print(f"✓ TikTok video prepared for manual upload!")
+        return True
+    else:
+        print("✗ TikTok preparation failed")
+        return False
+
+
 def update_instagram_bio(args):
     """Update Instagram bio links."""
     print("\n" + "="*80)
     print("UPDATING INSTAGRAM BIO")
     print("="*80)
+    
+    if not INSTAGRAM_AVAILABLE:
+        print("✗ Instagram support not available (requires instagrapi package)")
+        return False
     
     instagram = InstagramUploader()
     
@@ -294,8 +350,8 @@ def main():
     parser.add_argument("--caption", help="Instagram caption")
     
     # Platform selection
-    parser.add_argument("--platform", choices=["youtube", "instagram", "both"], 
-                       default="both", help="Which platform(s) to upload to")
+    parser.add_argument("--platform", choices=["youtube", "instagram", "tiktok", "all"], 
+                       default="youtube", help="Which platform(s) to upload to")
     
     # Bio update options
     parser.add_argument("--update-bio", action="store_true", 
@@ -320,12 +376,16 @@ def main():
         parser.print_help()
         sys.exit(1)
     
-    if args.platform in ["youtube", "both"] and not args.title:
+    if args.platform in ["youtube", "all"] and not args.title:
         print("Error: --title is required for YouTube uploads")
         sys.exit(1)
     
-    if args.platform in ["instagram", "both"] and not args.caption:
+    if args.platform in ["instagram", "all"] and not args.caption:
         print("Error: --caption is required for Instagram uploads")
+        sys.exit(1)
+    
+    if args.platform in ["tiktok", "all"] and not args.caption:
+        print("Error: --caption is required for TikTok uploads")
         sys.exit(1)
     
     print("="*80)
@@ -374,12 +434,16 @@ def main():
     # Upload to platforms
     success = True
     
-    if args.platform in ["youtube", "both"]:
+    if args.platform in ["youtube", "all"]:
         if not upload_to_youtube(args, video_path, thumbnail_path):
             success = False
     
-    if args.platform in ["instagram", "both"]:
+    if args.platform in ["instagram", "all"]:
         if not upload_to_instagram(args, video_path, thumbnail_path):
+            success = False
+    
+    if args.platform in ["tiktok", "all"]:
+        if not upload_to_tiktok(args, video_path):
             success = False
     
     # Cleanup
