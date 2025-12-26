@@ -89,12 +89,20 @@ class GoogleDriveHandler:
                     return matching_files[0]
                 return None
             else:
-                # Return first video file
+                # Return video file, preferring ones with "_captions" or "_caption" in the name
                 video_extensions = ['.mp4', '.mov', '.avi', '.mkv']
-                for f in files:
-                    if any(f['name'].lower().endswith(ext) for ext in video_extensions):
-                        return f
-                return None
+                video_files = [f for f in files if any(f['name'].lower().endswith(ext) for ext in video_extensions)]
+                
+                if not video_files:
+                    return None
+                
+                # Prefer files with "caption" in the name
+                caption_files = [f for f in video_files if 'caption' in f['name'].lower()]
+                if caption_files:
+                    return caption_files[0]
+                
+                # Otherwise return first video file
+                return video_files[0]
         except Exception as e:
             print(f"Error finding file in folder: {e}")
             return None

@@ -102,8 +102,12 @@ def download_from_folder_link(drive_handler: GoogleDriveHandler, folder_link: st
         print("Error: No video file found in folder")
         return None, None
     
-    # Find cover file (contains "cover" or "Cover" in name)
-    cover_file = drive_handler.find_file_in_folder(folder_id, file_pattern="over")  # matches Cover or cover
+    # Find cover file (contains "cover", "Cover", or "thumbnail" in name)
+    cover_file = drive_handler.find_file_in_folder(folder_id, file_pattern="cover")
+    if not cover_file:
+        cover_file = drive_handler.find_file_in_folder(folder_id, file_pattern="thumbnail")
+    if not cover_file:
+        cover_file = drive_handler.find_file_in_folder(folder_id, file_pattern="over")  # matches Cover
     
     config = get_config()
     
