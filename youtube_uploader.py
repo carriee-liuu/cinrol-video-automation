@@ -15,8 +15,9 @@ from config import get_config
 class YouTubeUploader:
     """Handles YouTube video uploads."""
     
-    # OAuth 2.0 scopes for YouTube upload
-    SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
+    # OAuth 2.0 scopes for YouTube upload and management
+    # force-ssl allows both upload and status changes (private/public)
+    SCOPES = ['https://www.googleapis.com/auth/youtube.force-ssl']
     
     def __init__(self):
         self.config = get_config()
@@ -48,8 +49,15 @@ class YouTubeUploader:
                         credentials_info,
                         self.SCOPES
                     )
-                    # Try to run in non-interactive mode first
-                    credentials = flow.run_local_server(port=0, open_browser=False)
+                    # Open browser for OAuth authorization
+                    print("\n" + "="*80)
+                    print("YOUTUBE AUTHORIZATION REQUIRED")
+                    print("="*80)
+                    print("Opening browser for authorization...")
+                    print("If browser doesn't open, copy and paste this URL:")
+                    credentials = flow.run_local_server(port=0, open_browser=True)
+                    print("Authorization successful!")
+                    print("="*80 + "\n")
                 except Exception as e:
                     print(f"Error during OAuth flow: {e}")
                     print("For GitHub Actions, you need to pre-authorize and upload token.pickle")
