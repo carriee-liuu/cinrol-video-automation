@@ -92,8 +92,8 @@ class InstagramUploader:
         print(f"Caption: {caption[:100]}..." if len(caption) > 100 else f"Caption: {caption}")
         
         try:
-            # Upload video clip (Reel)
-            media = self.client.clip_upload(
+            # Upload video as Reel (using video_upload which is more reliable)
+            media = self.client.video_upload(
                 path=video_path,
                 caption=caption,
                 thumbnail=cover_path if cover_path and os.path.exists(cover_path) else None
