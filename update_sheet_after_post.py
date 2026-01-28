@@ -45,9 +45,18 @@ def update_sheet_status(youtube_url: str, instagram_url: str = None):
             row_num = i
             break
     
+    # If not found, add a new row
     if not row_num:
-        print(f"Error: Could not find row with YouTube URL: {youtube_url}")
-        return False
+        print(f"Row with YouTube URL not found. Adding new row to tracker...")
+        # Add a new row with YouTube URL in column J
+        # We'll leave other columns empty for now - user can fill them in manually
+        new_row = [''] * 13  # Ensure we have enough columns (A through M)
+        new_row[9] = youtube_url  # Column J (index 9) - YouTube URL
+        schedule_sheet.append_row(new_row)
+        # Get the row number of the newly added row
+        all_values = schedule_sheet.get_all_values()
+        row_num = len(all_values)  # New row is at the end
+        print(f"✓ Added new row {row_num} to tracker")
     
     # Update the row
     updates = []
@@ -82,4 +91,6 @@ if __name__ == "__main__":
     
     success = update_sheet_status(youtube_url, instagram_url)
     sys.exit(0 if success else 1)
+
+
 

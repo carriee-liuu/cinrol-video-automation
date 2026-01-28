@@ -15,9 +15,13 @@ from config import get_config
 class YouTubeUploader:
     """Handles YouTube video uploads."""
     
-    # OAuth 2.0 scopes for YouTube upload and management
+    # OAuth 2.0 scopes for YouTube upload, management, and analytics
     # force-ssl allows both upload and status changes (private/public)
-    SCOPES = ['https://www.googleapis.com/auth/youtube.force-ssl']
+    # yt-analytics.readonly allows reading analytics data (watch hours, views)
+    SCOPES = [
+        'https://www.googleapis.com/auth/youtube.force-ssl',
+        'https://www.googleapis.com/auth/yt-analytics.readonly'
+    ]
     
     def __init__(self):
         self.config = get_config()

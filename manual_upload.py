@@ -48,13 +48,19 @@ except ImportError:
     INSTAGRAM_AVAILABLE = False
     print("Warning: Instagram support not available (instagrapi not installed)")
 
-# TikTok uploader
+# TikTok uploader (official API)
 try:
     from tiktok_uploader import TikTokUploader
     TIKTOK_AVAILABLE = True
 except ImportError:
     TIKTOK_AVAILABLE = False
-    print("Warning: TikTok support not available")
+
+# TikTok uploader (Buffer)
+try:
+    from tiktok_uploader_buffer import TikTokUploaderBuffer
+    BUFFER_AVAILABLE = True
+except ImportError:
+    BUFFER_AVAILABLE = False
 
 
 def extract_folder_id_from_link(link: str) -> Optional[str]:
@@ -102,12 +108,38 @@ def download_from_folder_link(drive_handler: GoogleDriveHandler, folder_link: st
         print("Error: No video file found in folder")
         return None, None
     
-    # Find cover file (contains "cover", "Cover", or "thumbnail" in name)
-    cover_file = drive_handler.find_file_in_folder(folder_id, file_pattern="cover")
+    # Find cover file (prefer image files: png, jpg, jpeg, webp)
+    # First try to find image files with "cover" or "thumbnail" in name
+    image_extensions = ['.png', '.jpg', '.jpeg', '.webp']
+    cover_file = None
+    
+    # Get all files in folder
+    all_files = drive_handler.service.files().list(
+        q=f"'{folder_id}' in parents and trashed=false",
+        fields='files(id, name, mimeType)'
+    ).execute().get('files', [])
+    
+    # Prefer image files with "cover" or "thumbnail" in name
+    for file in all_files:
+        name_lower = file['name'].lower()
+        ext = os.path.splitext(name_lower)[1]
+        if ext in image_extensions and ('cover' in name_lower or 'thumbnail' in name_lower):
+            cover_file = file
+            break
+    
+    # If no image cover found, try any image file
     if not cover_file:
-        cover_file = drive_handler.find_file_in_folder(folder_id, file_pattern="thumbnail")
+        for file in all_files:
+            ext = os.path.splitext(file['name'].lower())[1]
+            if ext in image_extensions:
+                cover_file = file
+                break
+    
+    # Fallback: try any file with "cover" or "thumbnail" (even if video)
     if not cover_file:
-        cover_file = drive_handler.find_file_in_folder(folder_id, file_pattern="over")  # matches Cover
+        cover_file = drive_handler.find_file_in_folder(folder_id, file_pattern="cover")
+        if not cover_file:
+            cover_file = drive_handler.find_file_in_folder(folder_id, file_pattern="thumbnail")
     
     config = get_config()
     
@@ -177,7 +209,7 @@ def download_from_drive(drive_handler: GoogleDriveHandler, drive_path: str, loca
 
 
 def upload_to_youtube(args, video_path: str, thumbnail_path: Optional[str]):
-    """Upload video to YouTube."""
+    """Upload video to YouTube. Returns YouTube URL if successful."""
     print("\n" + "="*80)
     print("UPLOADING TO YOUTUBE")
     print("="*80)
@@ -204,7 +236,7 @@ def upload_to_youtube(args, video_path: str, thumbnail_path: Optional[str]):
         except Exception as e:
             print(f"Error parsing schedule time: {e}")
             print("Format should be: 'YYYY-MM-DD HH:MM' (e.g., '2024-12-25 11:00')")
-            return False
+            return None
     
     video_id = youtube.upload_video(
         video_path=video_path,
@@ -216,74 +248,134 @@ def upload_to_youtube(args, video_path: str, thumbnail_path: Optional[str]):
     )
     
     if video_id:
+        youtube_url = f"https://www.youtube.com/watch?v={video_id}"
         print(f"✓ YouTube upload successful!")
         print(f"  Video ID: {video_id}")
-        print(f"  URL: https://www.youtube.com/watch?v={video_id}")
+        print(f"  URL: {youtube_url}")
         if publish_at:
             print(f"  Will be published at: {args.schedule} EST")
-        return True
+        return youtube_url
     else:
         print("✗ YouTube upload failed")
-        return False
+        return None
 
 
 def upload_to_instagram(args, video_path: str, cover_path: Optional[str]):
-    """Upload video to Instagram."""
+    """Upload video to Instagram. Returns Instagram URL if successful."""
     print("\n" + "="*80)
-    print("UPLOADING TO INSTAGRAM")
+    print("UPLOADING TO INSTAGRAM - SINGLE ATTEMPT ONLY")
     print("="*80)
     
     if not INSTAGRAM_AVAILABLE:
         print("✗ Instagram support not available (requires instagrapi package)")
-        return False
+        return None
     
+    # Additional safeguard: Check for lock file before creating uploader instance
+    import hashlib
+    config = get_config()
+    caption_hash = hashlib.md5(args.caption.encode()).hexdigest()[:8]
+    lock_file = os.path.join(config.temp_dir, f"instagram_upload_{caption_hash}.lock")
+    
+    if os.path.exists(lock_file):
+        print(f"✗ ERROR: Lock file exists: {lock_file}")
+        print("✗ Another upload with this caption is in progress or was recently completed.")
+        print("✗ To prevent duplicates, this upload is BLOCKED.")
+        return "locked"
+    
+    # Create Instagram uploader instance
+    # The uploader itself has multiple safeguards built in
     instagram = InstagramUploader()
     
+    # Call upload - this will only attempt once due to built-in safeguards
+    print("Calling upload_reel_with_retry (which has NO retries)...")
     media_id = instagram.upload_reel_with_retry(
         video_path=video_path,
         caption=args.caption,
         cover_path=cover_path
     )
     
-    if media_id:
+    if media_id and media_id != "already_attempted" and media_id != "locked" and media_id != "uploaded":
+        # Try to construct Instagram URL
+        # Note: instagrapi may not always return the code, so we'll try to get it
+        try:
+            # Try to get the media code from the client
+            media_info = instagram.client.media_info(media_id)
+            if hasattr(media_info, 'code'):
+                instagram_url = f"https://www.instagram.com/reel/{media_info.code}/"
+            else:
+                instagram_url = f"https://www.instagram.com/p/{media_id}/"
+        except:
+            # Fallback: use media ID
+            instagram_url = f"https://www.instagram.com/p/{media_id}/"
+        
         print(f"✓ Instagram upload successful!")
         print(f"  Media ID: {media_id}")
-        return True
+        print(f"  URL: {instagram_url}")
+        return instagram_url
+    elif media_id == "uploaded":
+        # Upload succeeded but we couldn't get the ID
+        print(f"✓ Instagram upload successful!")
+        print(f"  Note: Upload confirmed but URL not available")
+        return "uploaded"  # Return a placeholder
     else:
         print("✗ Instagram upload failed")
-        return False
+        return None
 
 
-def upload_to_tiktok(args, video_path: str):
-    """Upload video to TikTok (manual process)."""
+def upload_to_tiktok(args, video_path: str, folder_link: str = None):
+    """Upload video to TikTok using Buffer API."""
     print("\n" + "="*80)
     print("UPLOADING TO TIKTOK")
     print("="*80)
     
-    if not TIKTOK_AVAILABLE:
-        print("✗ TikTok support not available")
+    # Use caption as the main text (TikTok uses caption, not separate title/description)
+    caption = args.caption or args.title or "New Video"
+    
+    # Extract hashtags from caption
+    hashtags = []
+    words = caption.split()
+    hashtags = [word[1:] for word in words if word.startswith('#')]
+    
+    # Remove hashtags from caption text (they'll be added separately)
+    caption_text = " ".join([word for word in words if not word.startswith('#')])
+    
+    # Use Buffer (default method)
+    if not BUFFER_AVAILABLE:
+        print("✗ Buffer support not available")
+        print("   Install: pip install requests")
+        print("   Add BUFFER_ACCESS_TOKEN to .env")
         return False
     
-    tiktok = TikTokUploader()
-    
-    # Extract hashtags from caption if provided
-    hashtags = []
-    if args.caption:
-        words = args.caption.split()
-        hashtags = [word[1:] for word in words if word.startswith('#')]
-    
-    result = tiktok.upload_video(
-        video_path=video_path,
-        title=args.title or args.caption or "New Video",
-        description=args.description or args.caption or "",
-        hashtags=hashtags
-    )
-    
-    if result:
-        print(f"✓ TikTok video prepared for manual upload!")
-        return True
-    else:
-        print("✗ TikTok preparation failed")
+    try:
+        buffer = TikTokUploaderBuffer()
+        
+        # If folder link provided, use that method
+        if folder_link:
+            result = buffer.upload_from_google_drive_folder(
+                folder_link=folder_link,
+                caption=caption,
+                hashtags=hashtags
+            )
+        else:
+            # Need to get public URL for video
+            print("✗ Buffer requires a public video URL or folder link")
+            print("   Use --folder option or make video publicly shareable")
+            return False
+        
+        if result:
+            print(f"✓ TikTok video posted via Buffer!")
+            print(f"   Post ID: {result}")
+            return True
+        else:
+            print("✗ Buffer upload failed")
+            return False
+            
+    except ValueError as e:
+        print(f"✗ Buffer setup error: {e}")
+        print("   Make sure BUFFER_ACCESS_TOKEN is in .env")
+        return False
+    except Exception as e:
+        print(f"✗ Buffer error: {e}")
         return False
 
 
@@ -356,6 +448,8 @@ def main():
     # Platform selection
     parser.add_argument("--platform", choices=["youtube", "instagram", "tiktok", "all"], 
                        default="youtube", help="Which platform(s) to upload to")
+    
+    # TikTok uses Buffer API by default
     
     # Bio update options
     parser.add_argument("--update-bio", action="store_true", 
@@ -437,18 +531,49 @@ def main():
     
     # Upload to platforms
     success = True
+    youtube_url = None
+    instagram_url = None
     
     if args.platform in ["youtube", "all"]:
-        if not upload_to_youtube(args, video_path, thumbnail_path):
+        youtube_url = upload_to_youtube(args, video_path, thumbnail_path)
+        if not youtube_url:
             success = False
     
     if args.platform in ["instagram", "all"]:
-        if not upload_to_instagram(args, video_path, thumbnail_path):
+        instagram_url = upload_to_instagram(args, video_path, thumbnail_path)
+        if not instagram_url:
             success = False
     
     if args.platform in ["tiktok", "all"]:
-        if not upload_to_tiktok(args, video_path):
+        folder_link = args.folder if args.folder else None
+        if not upload_to_tiktok(args, video_path, folder_link):
             success = False
+    
+    # Update Google Sheet tracker if YouTube upload succeeded
+    if youtube_url and success:
+        print("\n" + "="*80)
+        print("UPDATING GOOGLE SHEET TRACKER")
+        print("="*80)
+        try:
+            import subprocess
+            cmd = [
+                sys.executable,
+                os.path.join(os.path.dirname(__file__), "update_sheet_after_post.py"),
+                youtube_url
+            ]
+            if instagram_url and instagram_url != "uploaded":
+                cmd.append(instagram_url)
+            
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode == 0:
+                print("✓ Google Sheet updated successfully")
+                if result.stdout:
+                    print(result.stdout)
+            else:
+                print(f"⚠ Warning: Could not update Google Sheet: {result.stderr}")
+        except Exception as e:
+            print(f"⚠ Warning: Error updating Google Sheet: {e}")
+        print("="*80)
     
     # Cleanup
     print("\nCleaning up temporary files...")

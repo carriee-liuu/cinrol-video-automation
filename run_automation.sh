@@ -37,3 +37,5 @@ find logs -name "automation_*.log" -mtime +30 -delete
 
 exit $EXIT_CODE
 
+
+

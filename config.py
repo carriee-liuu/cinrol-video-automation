@@ -43,6 +43,10 @@ class Config:
         if not self.instagram_username or not self.instagram_password:
             raise ValueError("INSTAGRAM_USERNAME and INSTAGRAM_PASSWORD are required")
         
+        # TikTok API credentials (optional - for official API)
+        self.tiktok_client_key = os.getenv('TIKTOK_CLIENT_KEY')
+        self.tiktok_client_secret = os.getenv('TIKTOK_CLIENT_SECRET')
+        
         # Platform character limits
         self.youtube_title_max = 100
         self.youtube_description_max = 5000
