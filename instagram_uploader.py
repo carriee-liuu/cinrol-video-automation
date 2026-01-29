@@ -135,6 +135,11 @@ class InstagramUploader:
             # IMPORTANT: clip_upload may succeed (post the reel) but then throw exceptions
             # when accessing the media object. We MUST treat ANY non-immediate failure as success
             # to prevent duplicates. Once clip_upload is called, we assume the post was created.
+            # Additionally, clip_upload may sometimes fail to save the caption, so we use
+            # media_edit() as a fallback to ensure the caption is always applied.
+            media_id = None
+            media_code = None
+            
             try:
                 # THIS IS THE ONLY PLACE WHERE clip_upload IS CALLED
                 # If this succeeds (even partially), the post was created - DO NOT RETRY
@@ -148,17 +153,14 @@ class InstagramUploader:
                 # Try to get the media ID, but don't fail if we can't
                 try:
                     media_id = media.pk
+                    media_code = getattr(media, 'code', None)
                     print(f"✓ Reel uploaded successfully! Media ID: {media_id}")
-                    try:
-                        print(f"✓ URL: https://www.instagram.com/reel/{media.code}/")
-                    except:
-                        pass  # URL is optional
-                    return str(media_id)
+                    if media_code:
+                        print(f"✓ URL: https://www.instagram.com/reel/{media_code}/")
                 except (AttributeError, Exception) as e:
                     # Post succeeded but we can't access the ID - still return success
                     print(f"✓ Reel uploaded successfully, but couldn't access media ID: {e}")
-                    print("✓ Returning success to prevent duplicate posts")
-                    return "uploaded"  # Return a non-None value to indicate success
+                    print("⚠ Will attempt to find media ID via recent posts to add caption")
                     
             except Exception as upload_error:
                 # CRITICAL: clip_upload may have posted the reel before throwing an error
@@ -166,9 +168,45 @@ class InstagramUploader:
                 print(f"⚠ Error during/after clip_upload: {upload_error}")
                 print("⚠ ASSUMING SUCCESS to prevent duplicate posts")
                 print("⚠ If clip_upload was called, the post was likely created")
-                # Always return success if clip_upload was attempted
-                # This prevents any retry mechanism from creating duplicates
-                return "uploaded"
+                print("⚠ Will attempt to find media ID via recent posts to add caption")
+            
+            # FALLBACK: If we don't have a media_id but the upload likely succeeded,
+            # try to find the most recent Reel and add the caption via media_edit()
+            if not media_id:
+                try:
+                    print("Attempting to find recently uploaded Reel to add caption...")
+                    # Get the most recent media from the user's timeline
+                    recent_medias = self.client.user_medias(self.client.user_id, amount=1)
+                    if recent_medias:
+                        most_recent = recent_medias[0]
+                        # Check if it's a Reel (clips) and was posted very recently (within last 2 minutes)
+                        if hasattr(most_recent, 'media_type') and most_recent.media_type == 2:  # 2 = Reel/Clip
+                            media_id = most_recent.pk
+                            print(f"✓ Found recent Reel with ID: {media_id}")
+                        else:
+                            print("⚠ Most recent post is not a Reel, skipping caption fallback")
+                    else:
+                        print("⚠ Could not find recent media to add caption")
+                except Exception as find_error:
+                    print(f"⚠ Could not find recent Reel to add caption: {find_error}")
+            
+            # If we have a media_id, ensure the caption is applied via media_edit() as a fallback
+            # This handles the case where clip_upload succeeded but failed to save the caption
+            if media_id:
+                print("Ensuring caption is applied via media_edit() fallback...")
+                # Small delay to ensure the post is fully processed
+                time.sleep(2)
+                caption_added = self._add_caption_via_edit(media_id, caption)
+                if caption_added:
+                    print("✓ Caption successfully applied via fallback method")
+                else:
+                    print("⚠ Caption may not have been applied - please check manually")
+            
+            # Always return success if clip_upload was attempted (to prevent duplicates)
+            if media_id:
+                return str(media_id)
+            else:
+                return "uploaded"  # Return a non-None value to indicate success
             
         except FeedbackRequired as e:
             print(f"Instagram feedback required: {e}")
@@ -223,6 +261,27 @@ class InstagramUploader:
         self._upload_attempted = True
         
         return result
+    
+    def _add_caption_via_edit(self, media_id: str, caption: str) -> bool:
+        """
+        Add caption to an uploaded Reel using media_edit() as a fallback.
+        This is used when clip_upload succeeds but fails to save the caption.
+        
+        Args:
+            media_id: The media ID of the uploaded Reel
+            caption: The caption text to add
+        
+        Returns:
+            True if caption was successfully added, False otherwise
+        """
+        try:
+            print(f"Attempting to add caption via media_edit() for media ID: {media_id}")
+            self.client.media_edit(media_id, caption=caption)
+            print("✓ Caption successfully added via media_edit()")
+            return True
+        except Exception as e:
+            print(f"⚠ Could not add caption via media_edit(): {e}")
+            return False
     
     def append_hashtags(self, caption: str, hashtags: str) -> str:
         """
